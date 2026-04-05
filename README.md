@@ -78,4 +78,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Author
 
-Marek A. Kostur
+Quaerendir
