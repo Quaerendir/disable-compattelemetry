@@ -1,0 +1,11 @@
+# Windows
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# PowerShell transcripts / logs
+*.log
+transcript_*.txt
+
+# VS Code
+.vscode/
