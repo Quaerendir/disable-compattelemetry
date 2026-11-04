@@ -9,7 +9,8 @@
     Run as Administrator. Compatible with Windows 10 and Windows 11.
 .PARAMETER NuclearAcl
     If specified, adds a DENY ExecuteFile ACE for Everyone on CompatTelRunner.exe.
-    Survives GPO resets but is reset by Windows Feature Updates — re-run after each.
+    Survives GPO resets, but any update that replaces the binary (monthly
+    cumulative updates included) resets it — re-run after updates.
 .EXAMPLE
     .\Disable-CompatTelemetry.ps1
 .EXAMPLE
@@ -35,12 +36,22 @@ function Write-Warn([string]$msg) { Write-Host "[!] $msg" -ForegroundColor Yello
 # ─────────────────────────────────────────────────────────────────
 Write-Step "Disabling Task Scheduler tasks..."
 
-$tasks = @(
+$tasks = [System.Collections.Generic.List[string]]@(
     "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser",
     "\Microsoft\Windows\Application Experience\ProgramDataUpdater",
     "\Microsoft\Windows\Application Experience\StartupAppTask",
-    "\Microsoft\Windows\Application Experience\AitAgent"
+    "\Microsoft\Windows\Application Experience\AitAgent",
+    "\Microsoft\Windows\Application Experience\MareBackup"
 )
+
+# Windows updates keep adding new tasks that launch CompatTelRunner.exe
+# (e.g. MareBackup). Catch any task whose action runs the binary.
+Get-ScheduledTask -ErrorAction SilentlyContinue |
+    Where-Object { $_.Actions | Where-Object { $_.Execute -match 'compattelrunner' } } |
+    ForEach-Object {
+        $full = $_.TaskPath + $_.TaskName
+        if ($tasks -notcontains $full) { $tasks.Add($full) }
+    }
 
 foreach ($task in $tasks) {
     try {
@@ -147,7 +158,7 @@ try {
 # ─────────────────────────────────────────────────────────────────
 # 5. NUCLEAR ACL option (-NuclearAcl switch required)
 #    Adds DENY ExecuteFile for Everyone on the binary itself.
-#    NOTE: Windows Feature Updates reset file ACLs. Re-run after updates.
+#    NOTE: Cumulative and Feature Updates replace the binary and reset its ACL.
 # ─────────────────────────────────────────────────────────────────
 if ($NuclearAcl) {
     Write-Step "Nuclear ACL: denying execute on CompatTelRunner.exe..."
@@ -155,19 +166,26 @@ if ($NuclearAcl) {
 
     if (Test-Path $bin) {
         try {
-            $null = & takeown.exe /F $bin /A 2>&1
-            $null = & icacls.exe  $bin /grant "Administrators:F" 2>&1
+            # Use well-known SIDs, not account names: names are localized
+            # ("Wszyscy", "Administratorzy", "Jeder", ...) and fail to resolve
+            # on non-English Windows.
+            $everyone = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")
+
+            $out = & takeown.exe /F $bin /A 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "takeown failed: $out" }
+            $out = & icacls.exe $bin /grant "*S-1-5-32-544:F" 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "icacls failed: $out" }
 
             $acl  = Get-Acl $bin
             $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                "Everyone",
+                $everyone,
                 [System.Security.AccessControl.FileSystemRights]::ExecuteFile,
                 [System.Security.AccessControl.AccessControlType]::Deny
             )
             $acl.AddAccessRule($rule)
             Set-Acl -Path $bin -AclObject $acl
             Write-OK "DENY ExecuteFile -> Everyone on $bin"
-            Write-Warn "Feature Updates reset file ACLs. Re-run this script after each Feature Update."
+            Write-Warn "Windows Updates (incl. monthly cumulative) replace the binary and reset its ACL. Re-run after updates."
         } catch {
             Write-Warn "ACL modification failed: $_"
         }

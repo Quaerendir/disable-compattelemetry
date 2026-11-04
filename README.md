@@ -8,7 +8,7 @@ Setting `AllowTelemetry = 0` via GPO is not enough. CompatTelRunner.exe has mult
 
 | Vector | What it disables |
 |--------|-----------------|
-| Task Scheduler | `Microsoft Compatibility Appraiser`, `ProgramDataUpdater`, `StartupAppTask`, `AitAgent` — both task state and all triggers |
+| Task Scheduler | `Microsoft Compatibility Appraiser`, `ProgramDataUpdater`, `StartupAppTask`, `AitAgent`, `MareBackup` + any other task whose action runs `CompatTelRunner.exe` |
 | Services | `DiagTrack` (Connected User Experiences and Telemetry) + `dmwappushservice` → `Disabled` + stopped |
 | Registry | `AllowTelemetry=0` in both policy and non-policy paths; `DisableEngine`, `AITEnable`, `DisableInventory` in AppCompat |
 | WER | Windows Error Reporting policy → Disabled |
@@ -43,7 +43,8 @@ Reboot recommended after running to ensure service changes take full effect.
 ## Notes on `-NuclearAcl`
 
 - Takes ownership of the binary (`takeown /A`) and modifies its DACL
-- **Windows Feature Updates reset file ACLs** — re-run the script after each Feature Update
+- **Windows Updates replace the binary and reset its ACL** — not only Feature Updates, monthly cumulative updates too. Re-run the script after updates
+- Uses well-known SIDs (`S-1-1-0`, `S-1-5-32-544`), so it works on localized (non-English) Windows
 - If you prefer not to touch the binary, the standard run (without `-NuclearAcl`) is sufficient for silencing the process under normal conditions
 - The ACL approach is "deny execute" rather than file deletion — this avoids Windows complaining about missing system files while still preventing execution
 
